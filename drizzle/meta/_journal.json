@@ -15,6 +15,13 @@
       "when": 1785190972566,
       "tag": "0001_purple_bromley",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785192612134,
+      "tag": "0002_superb_mentor",
+      "breakpoints": true
     }
   ]
 }

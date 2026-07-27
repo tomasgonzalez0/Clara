@@ -37,3 +37,13 @@ export type PlannedExpense = RecurringExpense & {
   plannedAmount: number;
   month: string;
 };
+
+export type PocketName = "Obligaciones" | "Mercado" | "Movilidad" | "Gato" | "Gasto libre" | "Colchon";
+
+export type PocketAllocation = {
+  id: number;
+  pocket: PocketName;
+  amount: number;
+  occurredOn: string;
+  note: string | null;
+};

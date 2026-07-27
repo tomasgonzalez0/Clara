@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
-import { addTransaction, payRecurringExpense } from "@/app/actions";
+import { addPocketAllocation, addTransaction, payRecurringExpense } from "@/app/actions";
 import { authOptions } from "@/auth";
 import { DashboardContent } from "@/components/dashboard-content";
 import { getDashboardData } from "@/lib/dashboard";
@@ -13,5 +13,5 @@ export default async function DashboardPage() {
   if (!email) redirect("/login");
 
   const data = await getDashboardData(email);
-  return <DashboardContent data={data} email={email} addTransaction={addTransaction} payRecurringExpense={payRecurringExpense} />;
+  return <DashboardContent data={data} email={email} addTransaction={addTransaction} addPocketAllocation={addPocketAllocation} payRecurringExpense={payRecurringExpense} />;
 }

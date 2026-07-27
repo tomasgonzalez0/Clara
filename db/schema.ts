@@ -53,3 +53,13 @@ export const transactions = pgTable(
     ),
   ],
 );
+
+export const pocketAllocations = pgTable("pocket_allocations", {
+  id: serial("id").primaryKey(),
+  userEmail: text("user_email").notNull().references(() => users.email, { onDelete: "cascade" }),
+  pocket: text("pocket").notNull(),
+  amount: integer("amount").notNull(),
+  occurredOn: text("occurred_on").notNull(),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});

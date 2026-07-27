@@ -2,6 +2,7 @@ import { desc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
   financeSettings,
+  pocketAllocations,
   recurringExpenses,
   transactions,
   users,
@@ -17,7 +18,7 @@ import {
   projectionMonths,
   requestToNextIncome,
 } from "@/lib/finance/calculations";
-import type { RecurringExpense, Transaction } from "@/lib/finance/types";
+import type { PocketAllocation, PocketName, RecurringExpense, Transaction } from "@/lib/finance/types";
 
 export async function ensureUserData(email: string) {
   const db = getDb();
@@ -64,9 +65,14 @@ export async function getDashboardData(email: string) {
     .from(transactions)
     .where(eq(transactions.userEmail, email))
     .orderBy(desc(transactions.occurredOn));
+  const allocationRows = await db
+    .select()
+    .from(pocketAllocations)
+    .where(eq(pocketAllocations.userEmail, email));
 
   const expenses = expenseRows as RecurringExpense[];
   const movements = transactionRows as Transaction[];
+  const allocations = allocationRows as PocketAllocation[];
   const today = bogotaToday();
   const currentMonth = monthKey(today);
   const forecast = projectionMonths(currentMonth, 4).map((month) => {
@@ -108,6 +114,13 @@ export async function getDashboardData(email: string) {
     (total, item) => total + item.plannedAmount,
     0,
   );
+  const allocatedByPocket = allocations.reduce<Record<PocketName, number>>(
+    (totals, allocation) => {
+      totals[allocation.pocket] += allocation.amount;
+      return totals;
+    },
+    { Obligaciones: 0, Mercado: 0, Movilidad: 0, Gato: 0, "Gasto libre": 0, Colchon: 0 },
+  );
 
   return {
     settings,
@@ -119,6 +132,7 @@ export async function getDashboardData(email: string) {
     forecast,
     currentMonth,
     currentPlan,
+    allocatedByPocket,
     request,
     amountToStabilize,
     amountForHealthyMonth,
