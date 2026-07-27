@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useLayoutEffect, useState } from "react";
 import { useFormStatus } from "react-dom";
 import {
   ArrowDownLeft,
@@ -37,6 +37,7 @@ type Props = {
   email: string;
   addTransaction: (formData: FormData) => void | Promise<void>;
   addPocketAllocation: (formData: FormData) => void | Promise<void>;
+  allocateFixedExpenses: () => void | Promise<void>;
   payRecurringExpense: (formData: FormData) => void | Promise<void>;
 };
 
@@ -97,7 +98,19 @@ function SaveAllocationButton() {
   );
 }
 
-export function DashboardContent({ data, email, addTransaction, addPocketAllocation, payRecurringExpense }: Props) {
+function AllocateFixedButton() {
+  const { pending } = useFormStatus();
+  return (
+    <button
+      disabled={pending}
+      className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-xs font-bold text-stone-800 transition hover:bg-stone-100 disabled:cursor-wait disabled:opacity-60"
+    >
+      {pending ? "Apartando..." : "Apartar gastos fijos"}
+    </button>
+  );
+}
+
+export function DashboardContent({ data, email, addTransaction, addPocketAllocation, allocateFixedExpenses, payRecurringExpense }: Props) {
   const [formOpen, setFormOpen] = useState(false);
   const [allocationOpen, setAllocationOpen] = useState(false);
   const [type, setType] = useState<"income" | "expense">("expense");
@@ -111,6 +124,23 @@ export function DashboardContent({ data, email, addTransaction, addPocketAllocat
   const guiltFreeAmount = Math.max(0, Math.min(200_000, data.projectedIncome - period.total - 100_000));
   const today = new Date().toISOString().slice(0, 10);
   const isIncome = type === "income";
+
+  useLayoutEffect(() => {
+    const inputs = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="amount"]'));
+    const cleanAndFormat = (input: HTMLInputElement) => {
+      const digits = input.value.replace(/\D/g, "");
+      input.value = digits ? new Intl.NumberFormat("es-CO").format(Number(digits)) : "";
+    };
+    const listeners = inputs.map((input) => {
+      input.type = "text";
+      input.inputMode = "numeric";
+      const onInput = () => cleanAndFormat(input);
+      input.addEventListener("input", onInput);
+      return { input, onInput };
+    });
+
+    return () => listeners.forEach(({ input, onInput }) => input.removeEventListener("input", onInput));
+  }, [allocationOpen, formOpen]);
 
   return (
     <main className="mx-auto min-h-screen max-w-5xl px-4 pb-28 pt-5 sm:px-7 sm:pt-8">
@@ -150,7 +180,7 @@ export function DashboardContent({ data, email, addTransaction, addPocketAllocat
       </section>
 
       <section className="mt-8">
-        <div className="mb-3 flex items-center justify-between gap-3"><div><p className="text-sm font-bold text-stone-900">Bolsillos para {monthLabel(period.month)}</p><p className="text-xs text-stone-500">Gastos del mes: {formatCop(period.total)}. Con la meta de colchon: {formatCop(period.total + 100_000)}.</p></div><button onClick={() => setAllocationOpen(true)} className="shrink-0 rounded-xl bg-stone-900 px-3 py-2 text-xs font-bold text-white hover:bg-stone-700">Apartar dinero</button></div>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm font-bold text-stone-900">Bolsillos para {monthLabel(period.month)}</p><p className="text-xs text-stone-500">Gastos estimados: {formatCop(period.total)}. Con la meta de colchon: {formatCop(period.total + 100_000)}.</p></div><div className="flex gap-2"><form action={allocateFixedExpenses}><AllocateFixedButton /></form><button onClick={() => setAllocationOpen(true)} className="shrink-0 rounded-xl bg-stone-900 px-3 py-2 text-xs font-bold text-white hover:bg-stone-700">Apartar dinero</button></div></div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           <Pocket name="Obligaciones" amount={sumCategories(["Hogar", "Servicios", "Educacion", "Finanzas"])} allocated={data.allocatedByPocket.Obligaciones} color="bg-violet-500" />
           <Pocket name="Mercado" amount={sumCategories(["Mercado", "Higiene"])} allocated={data.allocatedByPocket.Mercado} color="bg-amber-400" />
