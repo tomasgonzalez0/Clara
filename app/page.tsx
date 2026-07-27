@@ -1,65 +1,12 @@
-import Image from "next/image";
+import Link from "next/link";
+import { ArrowRight, CalendarDays, Landmark, ShieldCheck } from "lucide-react";
 
 export default function Home() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+    <main className="mx-auto flex min-h-screen max-w-6xl flex-col px-5 py-6 sm:px-8">
+      <header className="flex items-center justify-between"><span className="font-serif text-xl font-semibold text-stone-950">Clara</span><Link href="/login" className="rounded-full border border-stone-300 px-4 py-2 text-sm font-bold text-stone-800">Entrar</Link></header>
+      <section className="grid flex-1 items-center gap-12 py-16 lg:grid-cols-[1.1fr_.9fr]"><div><p className="text-sm font-bold uppercase tracking-[.18em] text-emerald-700">Finanzas sin ansiedad</p><h1 className="mt-4 max-w-3xl font-serif text-5xl font-semibold leading-[.98] tracking-tight text-stone-950 sm:text-7xl">Saber que puedes gastar tambien es tranquilidad.</h1><p className="mt-6 max-w-xl text-lg leading-8 text-stone-600">Un panel sencillo para registrar gastos, separar bolsillos y saber cuanto dinero pedir antes de quedar corta.</p><Link href="/login" className="mt-8 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-3.5 font-bold text-white shadow-lg shadow-emerald-900/15 hover:bg-emerald-700">Abrir mi panel <ArrowRight size={18} /></Link></div><div className="rounded-[2rem] bg-stone-900 p-6 text-white shadow-2xl shadow-stone-300"><p className="text-sm font-semibold text-stone-300">Vista previa</p><p className="mt-4 font-serif text-4xl font-semibold">$ 204.000</p><p className="mt-1 text-sm text-stone-400">Saldo en cuenta</p><div className="mt-7 rounded-2xl bg-white/10 p-4"><p className="text-xs font-bold uppercase tracking-wider text-emerald-300">Antes de pedir dinero</p><p className="mt-2 text-lg font-semibold">Tus gastos y el dinero que falta, sin adivinar.</p></div></div></section>
+      <section className="grid gap-4 border-t border-stone-200 py-7 sm:grid-cols-3"><div className="flex gap-3"><Landmark className="text-emerald-700" /><p className="text-sm text-stone-600"><b className="block text-stone-900">Bolsillos claros</b>Protege cada pago importante.</p></div><div className="flex gap-3"><CalendarDays className="text-emerald-700" /><p className="text-sm text-stone-600"><b className="block text-stone-900">Meses costosos</b>Anticipa ingles y acueducto.</p></div><div className="flex gap-3"><ShieldCheck className="text-emerald-700" /><p className="text-sm text-stone-600"><b className="block text-stone-900">Registro rapido</b>Menos de diez segundos por gasto.</p></div></section>
+    </main>
   );
 }
