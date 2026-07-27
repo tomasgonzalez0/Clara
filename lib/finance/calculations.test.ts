@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { defaultRecurringExpenses } from "@/lib/finance/defaults";
-import { averageMonthlyEssentialCost, monthlyTotal, plannedAmountForMonth } from "@/lib/finance/calculations";
+import {
+  averageMonthlyEssentialCost,
+  bogotaToday,
+  monthKey,
+  monthlyTotal,
+  plannedAmountForMonth,
+  projectionMonths,
+} from "@/lib/finance/calculations";
 import type { RecurringExpense } from "@/lib/finance/types";
 
 const expenses = defaultRecurringExpenses.map((expense, index) => ({ ...expense, id: index + 1 })) as RecurringExpense[];
@@ -22,5 +29,14 @@ describe("proyeccion financiera", () => {
 
   it("obtiene el promedio esencial esperado", () => {
     expect(averageMonthlyEssentialCost(expenses)).toBe(2_865_500);
+  });
+
+  it("usa la fecha de Colombia al cambiar de mes", () => {
+    expect(monthKey(bogotaToday(new Date("2026-08-01T05:00:00Z")))).toBe("2026-08");
+  });
+
+  it("siempre proyecta el mes actual y los dos siguientes", () => {
+    expect(projectionMonths("2026-07")).toEqual(["2026-07", "2026-08", "2026-09"]);
+    expect(projectionMonths("2026-10")).toEqual(["2026-10", "2026-11", "2026-12"]);
   });
 });

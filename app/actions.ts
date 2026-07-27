@@ -7,7 +7,7 @@ import { z } from "zod";
 import { authOptions } from "@/auth";
 import { getDb } from "@/db";
 import { recurringExpenses, transactions } from "@/db/schema";
-import { monthKey, plannedAmountForMonth } from "@/lib/finance/calculations";
+import { bogotaToday, monthKey, plannedAmountForMonth } from "@/lib/finance/calculations";
 import type { RecurringExpense } from "@/lib/finance/types";
 
 const transactionSchema = z.object({
@@ -34,6 +34,7 @@ export async function addTransaction(formData: FormData) {
   await db.insert(transactions).values({
     userEmail: email,
     ...parsed.data,
+    category: parsed.data.type === "income" ? "Ingreso" : parsed.data.category,
     note: parsed.data.note || null,
   });
   revalidatePath("/dashboard");
@@ -49,17 +50,25 @@ export async function payRecurringExpense(formData: FormData) {
     .where(eq(recurringExpenses.id, expenseId));
 
   if (!expense || expense.userEmail !== email) throw new Error("No se encontro esa obligacion.");
-  const amount = plannedAmountForMonth(expense as RecurringExpense, monthKey(new Date()));
+  const paidOn = bogotaToday();
+  const recurringPeriod = monthKey(paidOn);
+  const amount = plannedAmountForMonth(expense as RecurringExpense, recurringPeriod);
   if (amount === 0) throw new Error("Esta obligacion no corresponde a este mes.");
 
-  await db.insert(transactions).values({
-    userEmail: email,
-    amount,
-    type: "expense",
-    category: expense.category,
-    occurredOn: new Date().toISOString().slice(0, 10),
-    note: `${expense.name} - pago recurrente`,
-    recurringExpenseId: expense.id,
-  });
+  await db
+    .insert(transactions)
+    .values({
+      userEmail: email,
+      amount,
+      type: "expense",
+      category: expense.category,
+      occurredOn: `${recurringPeriod}-${String(paidOn.getDate()).padStart(2, "0")}`,
+      note: `${expense.name} - pago recurrente`,
+      recurringExpenseId: expense.id,
+      recurringPeriod,
+    })
+    .onConflictDoNothing({
+      target: [transactions.userEmail, transactions.recurringExpenseId, transactions.recurringPeriod],
+    });
   revalidatePath("/dashboard");
 }

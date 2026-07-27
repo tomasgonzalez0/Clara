@@ -1,0 +1,2 @@
+ALTER TABLE "transactions" ADD COLUMN "recurring_period" text;--> statement-breakpoint
+CREATE UNIQUE INDEX "transactions_recurring_period_unique" ON "transactions" USING btree ("user_email","recurring_expense_id","recurring_period");

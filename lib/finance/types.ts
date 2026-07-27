@@ -30,6 +30,7 @@ export type Transaction = {
   occurredOn: string;
   note: string | null;
   recurringExpenseId: number | null;
+  recurringPeriod: string | null;
 };
 
 export type PlannedExpense = RecurringExpense & {

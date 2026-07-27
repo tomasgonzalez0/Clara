@@ -31,14 +31,25 @@ export const recurringExpenses = pgTable(
   (table) => [uniqueIndex("recurring_expenses_user_code_idx").on(table.userEmail, table.code)],
 );
 
-export const transactions = pgTable("transactions", {
-  id: serial("id").primaryKey(),
-  userEmail: text("user_email").notNull().references(() => users.email, { onDelete: "cascade" }),
-  amount: integer("amount").notNull(),
-  type: text("type").notNull(),
-  category: text("category").notNull(),
-  occurredOn: text("occurred_on").notNull(),
-  note: text("note"),
-  recurringExpenseId: integer("recurring_expense_id").references(() => recurringExpenses.id, { onDelete: "set null" }),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+export const transactions = pgTable(
+  "transactions",
+  {
+    id: serial("id").primaryKey(),
+    userEmail: text("user_email").notNull().references(() => users.email, { onDelete: "cascade" }),
+    amount: integer("amount").notNull(),
+    type: text("type").notNull(),
+    category: text("category").notNull(),
+    occurredOn: text("occurred_on").notNull(),
+    note: text("note"),
+    recurringExpenseId: integer("recurring_expense_id").references(() => recurringExpenses.id, { onDelete: "set null" }),
+    recurringPeriod: text("recurring_period"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("transactions_recurring_period_unique").on(
+      table.userEmail,
+      table.recurringExpenseId,
+      table.recurringPeriod,
+    ),
+  ],
+);
