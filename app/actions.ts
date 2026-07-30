@@ -8,6 +8,7 @@ import { authOptions } from "@/auth";
 import { getDb } from "@/db";
 import { financeSettings, pocketAllocations, recurringExpenses, transactions } from "@/db/schema";
 import { balanceFromTransactions, bogotaToday, monthKey, plannedAmountForMonth, plannedExpensesForMonth } from "@/lib/finance/calculations";
+import { defaultRecurringExpenses } from "@/lib/finance/defaults";
 import type { PocketAllocation, PocketName, RecurringExpense, Transaction } from "@/lib/finance/types";
 
 const transactionSchema = z.object({
@@ -24,6 +25,15 @@ const pocketAllocationSchema = z.object({
   occurredOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   note: z.string().trim().max(160).optional(),
 });
+
+const editTransactionSchema = transactionSchema.extend({
+  id: z.coerce.number().int().positive(),
+});
+
+export type FixedAllocationResult =
+  | { status: "allocated"; amount: number }
+  | { status: "already_allocated" }
+  | { status: "insufficient_funds"; available: number; required: number; missing: number };
 
 async function currentUserEmail() {
   const session = await getServerSession(authOptions);
@@ -118,7 +128,85 @@ export async function addPocketAllocation(formData: FormData) {
   revalidatePath("/dashboard");
 }
 
-export async function allocateFixedExpenses() {
+export async function updateTransaction(formData: FormData) {
+  const email = await currentUserEmail();
+  const parsed = editTransactionSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) throw new Error("Revisa los datos del movimiento.");
+
+  const db = getDb();
+  const [existing] = await db
+    .select({ id: transactions.id, userEmail: transactions.userEmail })
+    .from(transactions)
+    .where(eq(transactions.id, parsed.data.id));
+  if (!existing || existing.userEmail !== email) throw new Error("No se encontro el movimiento.");
+
+  const category = parsed.data.type === "income" ? "Ingreso" : parsed.data.category;
+  await db
+    .update(transactions)
+    .set({
+      amount: parsed.data.amount,
+      type: parsed.data.type,
+      category,
+      occurredOn: parsed.data.occurredOn,
+      note: parsed.data.note || null,
+    })
+    .where(and(eq(transactions.id, parsed.data.id), eq(transactions.userEmail, email)));
+  revalidatePath("/dashboard");
+}
+
+function moneyFromForm(formData: FormData, key: string) {
+  const value = String(formData.get(key) ?? "").replace(/\D/g, "");
+  const amount = Number(value);
+  if (!Number.isSafeInteger(amount) || amount < 0 || amount > 100_000_000) {
+    throw new Error("Ingresa un monto valido.");
+  }
+  return amount;
+}
+
+export async function updateBudgetSettings(formData: FormData) {
+  const email = await currentUserEmail();
+  const db = getDb();
+  const expenses = await db
+    .select({ id: recurringExpenses.id })
+    .from(recurringExpenses)
+    .where(eq(recurringExpenses.userEmail, email));
+  const freeSpendingTarget = moneyFromForm(formData, "freeSpendingTarget");
+  const cushionTarget = moneyFromForm(formData, "cushionTarget");
+
+  await Promise.all(
+    expenses.map((expense) =>
+      db
+        .update(recurringExpenses)
+        .set({ amount: moneyFromForm(formData, `expense_${expense.id}`) })
+        .where(and(eq(recurringExpenses.id, expense.id), eq(recurringExpenses.userEmail, email))),
+    ),
+  );
+  await db
+    .update(financeSettings)
+    .set({ freeSpendingTarget, cushionTarget, updatedAt: new Date() })
+    .where(eq(financeSettings.userEmail, email));
+  revalidatePath("/dashboard");
+}
+
+export async function resetBudgetSettings() {
+  const email = await currentUserEmail();
+  const db = getDb();
+  await Promise.all(
+    defaultRecurringExpenses.map((expense) =>
+      db
+        .update(recurringExpenses)
+        .set({ amount: expense.amount })
+        .where(and(eq(recurringExpenses.userEmail, email), eq(recurringExpenses.code, expense.code))),
+    ),
+  );
+  await db
+    .update(financeSettings)
+    .set({ freeSpendingTarget: 200_000, cushionTarget: 100_000, updatedAt: new Date() })
+    .where(eq(financeSettings.userEmail, email));
+  revalidatePath("/dashboard");
+}
+
+export async function allocateFixedExpenses(): Promise<FixedAllocationResult> {
   const email = await currentUserEmail();
   const db = getDb();
   const today = bogotaToday();
@@ -155,9 +243,14 @@ export async function allocateFixedExpenses() {
   const alreadyAllocated = Object.values(allocated).reduce((total, amount) => total + amount, 0);
   const available = Math.max(0, balance - alreadyAllocated);
 
-  if (required === 0) return;
+  if (required === 0) return { status: "already_allocated" };
   if (available < required) {
-    throw new Error(`No hay saldo libre suficiente. Faltan ${required - available} COP para apartar los gastos fijos.`);
+    return {
+      status: "insufficient_funds",
+      available,
+      required,
+      missing: required - available,
+    };
   }
 
   const occurredOn = `${currentMonth}-${String(today.getDate()).padStart(2, "0")}`;
@@ -173,6 +266,7 @@ export async function allocateFixedExpenses() {
       })),
   );
   revalidatePath("/dashboard");
+  return { status: "allocated", amount: required };
 }
 
 export async function payRecurringExpense(formData: FormData) {

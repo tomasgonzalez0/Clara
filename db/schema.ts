@@ -11,6 +11,8 @@ export const financeSettings = pgTable("finance_settings", {
   closedThroughMonth: text("closed_through_month").notNull().default("2026-07"),
   firstIncomeEstimate: integer("first_income_estimate").notNull().default(1200000),
   secondIncomeEstimate: integer("second_income_estimate").notNull().default(1500000),
+  freeSpendingTarget: integer("free_spending_target").notNull().default(200000),
+  cushionTarget: integer("cushion_target").notNull().default(100000),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 

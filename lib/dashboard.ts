@@ -47,7 +47,7 @@ export async function ensureUserData(email: string) {
   }
 }
 
-export async function getDashboardData(email: string) {
+export async function getDashboardData(email: string, requestedMonth?: string) {
   await ensureUserData(email);
   const db = getDb();
   const [settings] = await db
@@ -74,7 +74,10 @@ export async function getDashboardData(email: string) {
   const movements = transactionRows as Transaction[];
   const allocations = allocationRows as PocketAllocation[];
   const today = bogotaToday();
-  const currentMonth = monthKey(today);
+  const actualMonth = monthKey(today);
+  const currentMonth = requestedMonth && /^\d{4}-(0[1-9]|1[0-2])$/.test(requestedMonth)
+    ? requestedMonth
+    : actualMonth;
   const forecast = projectionMonths(currentMonth, 4).map((month) => {
     return {
       month,
@@ -105,7 +108,7 @@ export async function getDashboardData(email: string) {
       .map((movement) => movement.recurringExpenseId),
   );
   const currentPlan =
-    currentMonth <= settings.closedThroughMonth
+    currentMonth !== actualMonth || currentMonth <= settings.closedThroughMonth
       ? []
       : plannedExpensesForMonth(expenses, currentMonth).filter(
           (expense) => !paidCurrentRecurringIds.has(expense.id),
@@ -121,6 +124,10 @@ export async function getDashboardData(email: string) {
     },
     { Obligaciones: 0, Mercado: 0, Movilidad: 0, Gato: 0, "Gasto libre": 0, Colchon: 0 },
   );
+  const allocatedTotal = Object.values(allocatedByPocket).reduce(
+    (total, amount) => total + amount,
+    0,
+  );
 
   return {
     settings,
@@ -131,12 +138,14 @@ export async function getDashboardData(email: string) {
     projectedIncome,
     forecast,
     currentMonth,
+    isCurrentMonth: currentMonth === actualMonth,
     currentPlan,
     allocatedByPocket,
     request,
     amountToStabilize,
     amountForHealthyMonth,
     availableToSpend: Math.max(0, balance - unpaidCurrentPlan),
-    recentMovements: movements.slice(0, 6),
+    unallocatedBalance: Math.max(0, balance - allocatedTotal),
+    recentMovements: movements.slice(0, 20),
   };
 }

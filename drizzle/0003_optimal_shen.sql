@@ -1,0 +1,2 @@
+ALTER TABLE "finance_settings" ADD COLUMN "free_spending_target" integer DEFAULT 200000 NOT NULL;--> statement-breakpoint
+ALTER TABLE "finance_settings" ADD COLUMN "cushion_target" integer DEFAULT 100000 NOT NULL;
