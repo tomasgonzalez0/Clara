@@ -125,7 +125,7 @@ export async function getDashboardData(email: string, requestedMonth?: string) {
     { Obligaciones: 0, Mercado: 0, Movilidad: 0, Gato: 0, "Gasto libre": 0, Colchon: 0 },
   );
   const allocatedTotal = Object.values(allocatedByPocket).reduce(
-    (total, amount) => total + amount,
+    (total, amount) => total + Math.max(0, amount),
     0,
   );
 

@@ -55,7 +55,7 @@ type Props = {
   resetBudgetSettings: () => void | Promise<void>;
 };
 
-const expenseCategories = ["Mercado", "Transporte", "Mascota", "Hogar", "Servicios", "Higiene", "Educacion", "Gasto libre"];
+const expenseCategories: PocketName[] = ["Obligaciones", "Mercado", "Movilidad", "Gato", "Gasto libre", "Colchon"];
 
 function monthLabel(month: string) {
   return new Intl.DateTimeFormat("es-CO", { month: "long", year: "numeric" }).format(
@@ -64,12 +64,15 @@ function monthLabel(month: string) {
 }
 
 function Pocket({ name, amount, allocated, color }: { name: PocketName; amount: number; allocated: number; color: string }) {
+  const shortfall = Math.max(0, amount - allocated);
+  const isOverdrawn = allocated < 0;
   return (
-    <div className="rounded-2xl border border-stone-200 bg-white p-3 shadow-sm">
+    <div className={`rounded-2xl border p-3 shadow-sm ${shortfall > 0 || isOverdrawn ? "border-rose-200 bg-rose-50/40" : "border-stone-200 bg-white"}`}>
       <div className={`mb-4 h-2 w-9 rounded-full ${color}`} />
       <p className="text-xs font-bold text-stone-500">{name}</p>
       <p className="mt-1 text-base font-bold text-stone-950">{formatCop(amount)}</p>
-      <p className="mt-1 text-[11px] font-medium text-emerald-700">Apartado: {formatCop(allocated)}</p>
+      <p className={`mt-1 text-[11px] font-bold ${isOverdrawn ? "text-rose-700" : "text-emerald-700"}`}>{isOverdrawn ? "Deuda" : "Apartado"}: {formatCop(allocated)}</p>
+      {shortfall > 0 && <p className="mt-1 text-[11px] font-bold text-rose-700">Faltan: {formatCop(shortfall)}</p>}
     </div>
   );
 }
@@ -120,17 +123,17 @@ function SaveBudgetButton() {
 function MoneyField({ name, initialValue }: { name: string; initialValue: number }) {
   const [value, setValue] = useState(String(initialValue));
   const displayValue = value ? new Intl.NumberFormat("es-CO").format(Number(value)) : "";
-  return <div className="mt-2 flex overflow-hidden rounded-xl border border-stone-200 bg-white focus-within:border-emerald-500"><span className="grid w-10 place-items-center border-r border-stone-200 bg-stone-50 font-bold text-stone-500">$</span><input aria-label="Monto en pesos colombianos" inputMode="numeric" type="text" value={displayValue} onChange={(event) => setValue(event.target.value.replace(/\D/g, ""))} className="min-w-0 flex-1 px-3 py-2 text-sm font-bold outline-none" /><input type="hidden" name={name} value={value} /></div>;
+  return <div className="money-field mt-2 flex overflow-hidden rounded-xl border border-stone-200 bg-white focus-within:border-emerald-500"><span className="grid w-10 place-items-center border-r border-stone-200 bg-stone-50 font-bold text-stone-500">$</span><input aria-label="Monto en pesos colombianos" inputMode="numeric" type="text" value={displayValue} onChange={(event) => setValue(event.target.value.replace(/\D/g, ""))} className="min-w-0 flex-1 px-3 py-2 text-sm font-bold outline-none" /><input type="hidden" name={name} value={value} /></div>;
 }
 
-function AllocateFixedButton() {
+function AllocateFixedButton({ disabled }: { disabled: boolean }) {
   const { pending } = useFormStatus();
   return (
     <button
-      disabled={pending}
+      disabled={pending || disabled}
       className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-xs font-bold text-stone-800 transition hover:bg-stone-100 disabled:cursor-wait disabled:opacity-60"
     >
-      {pending ? "Apartando..." : "Apartar gastos fijos"}
+      {pending ? "Apartando..." : disabled ? "Gastos fijos cubiertos" : "Apartar gastos fijos"}
     </button>
   );
 }
@@ -150,6 +153,12 @@ export function DashboardContent({ data, email, addTransaction, addPocketAllocat
       .filter((item) => items.includes(item.category))
       .reduce((total, item) => total + item.plannedAmount, 0);
   const guiltFreeAmount = Math.max(0, Math.min(data.settings.freeSpendingTarget, data.projectedIncome - period.total - data.settings.cushionTarget));
+  const fixedShortfall = [
+    { target: sumCategories(["Hogar", "Servicios", "Educacion", "Finanzas"]), allocated: data.allocatedByPocket.Obligaciones },
+    { target: sumCategories(["Mercado", "Higiene"]), allocated: data.allocatedByPocket.Mercado },
+    { target: sumCategories(["Transporte"]), allocated: data.allocatedByPocket.Movilidad },
+    { target: sumCategories(["Mascota"]), allocated: data.allocatedByPocket.Gato },
+  ].reduce((total, pocket) => total + Math.max(0, pocket.target - pocket.allocated), 0);
   const today = new Date().toISOString().slice(0, 10);
   const isIncome = type === "income";
 
@@ -213,7 +222,7 @@ export function DashboardContent({ data, email, addTransaction, addPocketAllocat
       </section>
 
       <section className="mt-8">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3"><div><div className="flex items-center gap-2"><Link href={`/dashboard?month=${addMonths(period.month, -1)}`} className="grid h-7 w-7 place-items-center rounded-lg border border-stone-200 text-stone-700 hover:bg-stone-100" aria-label="Mes anterior"><ChevronLeft size={16} /></Link><p className="text-sm font-bold text-stone-900">Bolsillos para {monthLabel(period.month)}</p><Link href={`/dashboard?month=${addMonths(period.month, 1)}`} className="grid h-7 w-7 place-items-center rounded-lg border border-stone-200 text-stone-700 hover:bg-stone-100" aria-label="Mes siguiente"><ChevronRight size={16} /></Link></div><p className="mt-1 text-xs text-stone-500">Gastos estimados: {formatCop(period.total)}. Con la meta de colchon: {formatCop(period.total + data.settings.cushionTarget)}.</p></div><div className="flex gap-2">{data.isCurrentMonth && <form action={handleFixedAllocation}><AllocateFixedButton /></form>}<button onClick={() => setAllocationOpen(true)} className="shrink-0 rounded-xl bg-stone-900 px-3 py-2 text-xs font-bold text-white hover:bg-stone-700">Apartar dinero</button></div></div>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3"><div><div className="flex items-center gap-2"><Link href={`/dashboard?month=${addMonths(period.month, -1)}`} className="grid h-7 w-7 place-items-center rounded-lg border border-stone-200 text-stone-700 hover:bg-stone-100" aria-label="Mes anterior"><ChevronLeft size={16} /></Link><p className="text-sm font-bold text-stone-900">Bolsillos para {monthLabel(period.month)}</p><Link href={`/dashboard?month=${addMonths(period.month, 1)}`} className="grid h-7 w-7 place-items-center rounded-lg border border-stone-200 text-stone-700 hover:bg-stone-100" aria-label="Mes siguiente"><ChevronRight size={16} /></Link></div><p className="mt-1 text-xs text-stone-500">Gastos estimados: {formatCop(period.total)}. Con la meta de colchon: {formatCop(period.total + data.settings.cushionTarget)}.</p></div><div className="flex gap-2">{data.isCurrentMonth && <form action={handleFixedAllocation}><AllocateFixedButton disabled={fixedShortfall === 0} /></form>}<button onClick={() => setAllocationOpen(true)} className="shrink-0 rounded-xl bg-stone-900 px-3 py-2 text-xs font-bold text-white hover:bg-stone-700">Apartar dinero</button></div></div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           <Pocket name="Obligaciones" amount={sumCategories(["Hogar", "Servicios", "Educacion", "Finanzas"])} allocated={data.allocatedByPocket.Obligaciones} color="bg-violet-500" />
           <Pocket name="Mercado" amount={sumCategories(["Mercado", "Higiene"])} allocated={data.allocatedByPocket.Mercado} color="bg-amber-400" />

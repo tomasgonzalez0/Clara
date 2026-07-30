@@ -43,6 +43,9 @@ async function currentUserEmail() {
 }
 
 function pocketForCategory(category: string): PocketName | null {
+  if (["Obligaciones", "Mercado", "Movilidad", "Gato", "Gasto libre", "Colchon"].includes(category)) {
+    return category as PocketName;
+  }
   if (["Hogar", "Servicios", "Educacion", "Finanzas"].includes(category)) return "Obligaciones";
   if (["Mercado", "Higiene"].includes(category)) return "Mercado";
   if (category === "Transporte") return "Movilidad";
@@ -72,18 +75,12 @@ async function consumePocketBalance({
 }) {
   if (!pocket) return;
   const db = getDb();
-  const allocations = await db
-    .select({ amount: pocketAllocations.amount })
-    .from(pocketAllocations)
-    .where(and(eq(pocketAllocations.userEmail, email), eq(pocketAllocations.pocket, pocket)));
-  const available = allocations.reduce((total, allocation) => total + allocation.amount, 0);
-  const amountToConsume = Math.min(Math.max(0, available), amount);
-  if (amountToConsume === 0) return;
 
   await db.insert(pocketAllocations).values({
     userEmail: email,
     pocket,
-    amount: -amountToConsume,
+    // A negative balance makes overspending visible instead of silently hiding it.
+    amount: -amount,
     occurredOn,
     note,
   });
@@ -240,7 +237,10 @@ export async function allocateFixedExpenses(): Promise<FixedAllocationResult> {
     0,
   );
   const balance = balanceFromTransactions(settings.openingBalance, movements);
-  const alreadyAllocated = Object.values(allocated).reduce((total, amount) => total + amount, 0);
+  const alreadyAllocated = Object.values(allocated).reduce(
+    (total, amount) => total + Math.max(0, amount),
+    0,
+  );
   const available = Math.max(0, balance - alreadyAllocated);
 
   if (required === 0) return { status: "already_allocated" };

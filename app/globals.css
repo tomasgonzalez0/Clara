@@ -33,6 +33,10 @@ label:has(input[name="amount"])::after {
   pointer-events: none;
 }
 
+label:has(.money-field)::after {
+  content: none;
+}
+
 input[name="amount"] {
   padding-left: 2rem !important;
 }
