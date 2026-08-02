@@ -9,6 +9,7 @@ import { getDb } from "@/db";
 import { financeSettings, pocketAllocations, recurringExpenses, transactions } from "@/db/schema";
 import { balanceFromTransactions, bogotaToday, monthKey, plannedAmountForMonth, plannedExpensesForMonth } from "@/lib/finance/calculations";
 import { defaultRecurringExpenses } from "@/lib/finance/defaults";
+import { emptyPocketTotals, pocketForCategory, pocketNames } from "@/lib/finance/pockets";
 import type { PocketAllocation, PocketName, RecurringExpense, Transaction } from "@/lib/finance/types";
 
 const transactionSchema = z.object({
@@ -42,23 +43,7 @@ async function currentUserEmail() {
   return email;
 }
 
-function pocketForCategory(category: string): PocketName | null {
-  if (["Obligaciones", "Mercado", "Movilidad", "Gato", "Gasto libre", "Colchon"].includes(category)) {
-    return category as PocketName;
-  }
-  if (["Hogar", "Servicios", "Educacion", "Finanzas"].includes(category)) return "Obligaciones";
-  if (["Mercado", "Higiene"].includes(category)) return "Mercado";
-  if (category === "Transporte") return "Movilidad";
-  if (category === "Mascota") return "Gato";
-  if (category === "Gasto libre") return "Gasto libre";
-  return null;
-}
-
-const fixedPockets: PocketName[] = ["Obligaciones", "Mercado", "Movilidad", "Gato"];
-
-function blankPocketTotals() {
-  return { Obligaciones: 0, Mercado: 0, Movilidad: 0, Gato: 0, "Gasto libre": 0, Colchon: 0 } satisfies Record<PocketName, number>;
-}
+const fixedPockets: PocketName[] = pocketNames.slice(0, 4);
 
 async function consumePocketBalance({
   email,
@@ -66,23 +51,35 @@ async function consumePocketBalance({
   amount,
   occurredOn,
   note,
+  transactionId,
 }: {
   email: string;
   pocket: PocketName | null;
   amount: number;
   occurredOn: string;
   note: string;
+  transactionId: number;
 }) {
   if (!pocket) return;
   const db = getDb();
+  const allocations = await db
+    .select({ amount: pocketAllocations.amount, transactionId: pocketAllocations.transactionId })
+    .from(pocketAllocations)
+    .where(and(eq(pocketAllocations.userEmail, email), eq(pocketAllocations.pocket, pocket)));
+  const available = allocations.reduce(
+    (total, allocation) => allocation.amount < 0 && !allocation.transactionId ? total : total + allocation.amount,
+    0,
+  );
+  const consumed = Math.min(Math.max(0, available), amount);
+  if (consumed === 0) return;
 
   await db.insert(pocketAllocations).values({
     userEmail: email,
     pocket,
-    // A negative balance makes overspending visible instead of silently hiding it.
-    amount: -amount,
+    amount: -consumed,
     occurredOn,
     note,
+    transactionId,
   });
 }
 
@@ -93,12 +90,13 @@ export async function addTransaction(formData: FormData) {
 
   const db = getDb();
   const category = parsed.data.type === "income" ? "Ingreso" : parsed.data.category;
-  await db.insert(transactions).values({
+  const [transaction] = await db.insert(transactions).values({
     userEmail: email,
     ...parsed.data,
     category,
     note: parsed.data.note || null,
-  });
+  }).returning({ id: transactions.id });
+  if (!transaction) throw new Error("No fue posible registrar el movimiento.");
   if (parsed.data.type === "expense") {
     await consumePocketBalance({
       email,
@@ -106,6 +104,7 @@ export async function addTransaction(formData: FormData) {
       amount: parsed.data.amount,
       occurredOn: parsed.data.occurredOn,
       note: `Consumo: ${parsed.data.note || category}`,
+      transactionId: transaction.id,
     });
   }
   revalidatePath("/dashboard");
@@ -138,6 +137,7 @@ export async function updateTransaction(formData: FormData) {
   if (!existing || existing.userEmail !== email) throw new Error("No se encontro el movimiento.");
 
   const category = parsed.data.type === "income" ? "Ingreso" : parsed.data.category;
+  await db.delete(pocketAllocations).where(eq(pocketAllocations.transactionId, parsed.data.id));
   await db
     .update(transactions)
     .set({
@@ -148,6 +148,30 @@ export async function updateTransaction(formData: FormData) {
       note: parsed.data.note || null,
     })
     .where(and(eq(transactions.id, parsed.data.id), eq(transactions.userEmail, email)));
+  if (parsed.data.type === "expense") {
+    await consumePocketBalance({
+      email,
+      pocket: pocketForCategory(category),
+      amount: parsed.data.amount,
+      occurredOn: parsed.data.occurredOn,
+      note: `Consumo: ${parsed.data.note || category}`,
+      transactionId: parsed.data.id,
+    });
+  }
+  revalidatePath("/dashboard");
+}
+
+export async function deleteTransaction(formData: FormData) {
+  const email = await currentUserEmail();
+  const id = z.coerce.number().int().positive().parse(formData.get("id"));
+  const db = getDb();
+  const [existing] = await db
+    .select({ id: transactions.id, userEmail: transactions.userEmail })
+    .from(transactions)
+    .where(eq(transactions.id, id));
+  if (!existing || existing.userEmail !== email) throw new Error("No se encontro el movimiento.");
+
+  await db.delete(transactions).where(and(eq(transactions.id, id), eq(transactions.userEmail, email)));
   revalidatePath("/dashboard");
 }
 
@@ -222,16 +246,27 @@ export async function allocateFixedExpenses(): Promise<FixedAllocationResult> {
   const expenses = expenseRows as RecurringExpense[];
   const movements = movementRows as Transaction[];
   const allocations = allocationRows as PocketAllocation[];
+  const paidByPocket = movements
+    .filter((movement) => movement.type === "expense" && movement.occurredOn.startsWith(currentMonth))
+    .reduce<Record<PocketName, number>>((totals, movement) => {
+      const pocket = pocketForCategory(movement.category);
+      if (pocket) totals[pocket] += movement.amount;
+      return totals;
+    }, emptyPocketTotals());
   const targets = plannedExpensesForMonth(expenses, currentMonth)
     .reduce<Record<PocketName, number>>((totals, expense) => {
       const pocket = pocketForCategory(expense.category);
       if (pocket) totals[pocket] += expense.plannedAmount;
       return totals;
-    }, blankPocketTotals());
+    }, emptyPocketTotals());
+  fixedPockets.forEach((pocket) => {
+    targets[pocket] = Math.max(0, targets[pocket] - paidByPocket[pocket]);
+  });
   const allocated = allocations.reduce<Record<PocketName, number>>((totals, allocation) => {
+    if (allocation.amount < 0 && !allocation.transactionId) return totals;
     totals[allocation.pocket] += allocation.amount;
     return totals;
-  }, blankPocketTotals());
+  }, emptyPocketTotals());
   const required = fixedPockets.reduce(
     (total, pocket) => total + Math.max(0, targets[pocket] - allocated[pocket]),
     0,
@@ -307,6 +342,7 @@ export async function payRecurringExpense(formData: FormData) {
       amount,
       occurredOn: `${recurringPeriod}-${String(paidOn.getDate()).padStart(2, "0")}`,
       note: `Consumo: ${expense.name}`,
+      transactionId: payment.id,
     });
   }
   revalidatePath("/dashboard");

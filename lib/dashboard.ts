@@ -8,6 +8,7 @@ import {
   users,
 } from "@/db/schema";
 import { defaultRecurringExpenses } from "@/lib/finance/defaults";
+import { emptyPocketTotals, pocketForCategory } from "@/lib/finance/pockets";
 import {
   averageMonthlyEssentialCost,
   balanceFromTransactions,
@@ -119,11 +120,36 @@ export async function getDashboardData(email: string, requestedMonth?: string) {
   );
   const allocatedByPocket = allocations.reduce<Record<PocketName, number>>(
     (totals, allocation) => {
+      // Negative rows without a transaction link came from an old double-counting bug.
+      if (allocation.amount < 0 && !allocation.transactionId) return totals;
       totals[allocation.pocket] += allocation.amount;
       return totals;
     },
-    { Obligaciones: 0, Mercado: 0, Movilidad: 0, Gato: 0, "Gasto libre": 0, Colchon: 0 },
+    emptyPocketTotals(),
   );
+  const paidByPocket = movements
+    .filter((movement) => movement.type === "expense" && movement.occurredOn.startsWith(currentMonth))
+    .reduce<Record<PocketName, number>>((totals, movement) => {
+      const pocket = pocketForCategory(movement.category);
+      if (pocket) totals[pocket] += movement.amount;
+      return totals;
+    }, emptyPocketTotals());
+  const pocketTargets = plannedExpensesForMonth(expenses, currentMonth).reduce<Record<PocketName, number>>(
+    (totals, expense) => {
+      const pocket = pocketForCategory(expense.category);
+      if (pocket) totals[pocket] += expense.plannedAmount;
+      return totals;
+    },
+    emptyPocketTotals(),
+  );
+  pocketTargets["Gasto libre"] = settings.freeSpendingTarget;
+  pocketTargets.Colchon = settings.cushionTarget;
+  const outstandingByPocket = emptyPocketTotals();
+  const overspentByPocket = emptyPocketTotals();
+  (Object.keys(pocketTargets) as PocketName[]).forEach((pocket) => {
+    outstandingByPocket[pocket] = Math.max(0, pocketTargets[pocket] - paidByPocket[pocket]);
+    overspentByPocket[pocket] = Math.max(0, paidByPocket[pocket] - pocketTargets[pocket]);
+  });
   const allocatedTotal = Object.values(allocatedByPocket).reduce(
     (total, amount) => total + Math.max(0, amount),
     0,
@@ -141,6 +167,10 @@ export async function getDashboardData(email: string, requestedMonth?: string) {
     isCurrentMonth: currentMonth === actualMonth,
     currentPlan,
     allocatedByPocket,
+    pocketTargets,
+    paidByPocket,
+    outstandingByPocket,
+    overspentByPocket,
     request,
     amountToStabilize,
     amountForHealthyMonth,

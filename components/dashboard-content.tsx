@@ -3,6 +3,7 @@
 import { useLayoutEffect, useState } from "react";
 import { useFormStatus } from "react-dom";
 import Link from "next/link";
+import { EditMovementDialog } from "@/components/edit-movement-dialog";
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -28,6 +29,10 @@ type DashboardData = {
   forecast: { month: string; total: number; items: PlannedExpense[] }[];
   currentPlan: PlannedExpense[];
   allocatedByPocket: Record<PocketName, number>;
+  pocketTargets: Record<PocketName, number>;
+  paidByPocket: Record<PocketName, number>;
+  outstandingByPocket: Record<PocketName, number>;
+  overspentByPocket: Record<PocketName, number>;
   unallocatedBalance: number;
   isCurrentMonth: boolean;
   availableToSpend: number;
@@ -51,6 +56,7 @@ type Props = {
   >;
   payRecurringExpense: (formData: FormData) => void | Promise<void>;
   updateTransaction: (formData: FormData) => void | Promise<void>;
+  deleteTransaction: (formData: FormData) => void | Promise<void>;
   updateBudgetSettings: (formData: FormData) => void | Promise<void>;
   resetBudgetSettings: () => void | Promise<void>;
 };
@@ -63,16 +69,16 @@ function monthLabel(month: string) {
   );
 }
 
-function Pocket({ name, amount, allocated, color }: { name: PocketName; amount: number; allocated: number; color: string }) {
-  const shortfall = Math.max(0, amount - allocated);
-  const isOverdrawn = allocated < 0;
+function Pocket({ name, amount, target, paid, allocated, overspent, color }: { name: PocketName; amount: number; target: number; paid: number; allocated: number; overspent: number; color: string }) {
+  const isOverdrawn = overspent > 0;
   return (
-    <div className={`rounded-2xl border p-3 shadow-sm ${shortfall > 0 || isOverdrawn ? "border-rose-200 bg-rose-50/40" : "border-stone-200 bg-white"}`}>
+    <div className={`rounded-2xl border p-3 shadow-sm ${isOverdrawn ? "border-rose-200 bg-rose-50/40" : "border-stone-200 bg-white"}`}>
       <div className={`mb-4 h-2 w-9 rounded-full ${color}`} />
       <p className="text-xs font-bold text-stone-500">{name}</p>
       <p className="mt-1 text-base font-bold text-stone-950">{formatCop(amount)}</p>
-      <p className={`mt-1 text-[11px] font-bold ${isOverdrawn ? "text-rose-700" : "text-emerald-700"}`}>{isOverdrawn ? "Deuda" : "Apartado"}: {formatCop(allocated)}</p>
-      {shortfall > 0 && <p className="mt-1 text-[11px] font-bold text-rose-700">Faltan: {formatCop(shortfall)}</p>}
+      <p className="mt-1 text-[11px] font-medium text-stone-500">Meta: {formatCop(target)} · Pagado: {formatCop(paid)}</p>
+      <p className="mt-1 text-[11px] font-bold text-emerald-700">Apartado: {formatCop(allocated)}</p>
+      {isOverdrawn && <p className="mt-1 text-[11px] font-bold text-rose-700">Gasto de mas: {formatCop(overspent)}</p>}
     </div>
   );
 }
@@ -138,26 +144,22 @@ function AllocateFixedButton({ disabled }: { disabled: boolean }) {
   );
 }
 
-export function DashboardContent({ data, email, addTransaction, addPocketAllocation, allocateFixedExpenses, payRecurringExpense, updateTransaction, updateBudgetSettings, resetBudgetSettings }: Props) {
+export function DashboardContent({ data, email, addTransaction, addPocketAllocation, allocateFixedExpenses, payRecurringExpense, updateTransaction, deleteTransaction, updateBudgetSettings, resetBudgetSettings }: Props) {
   const [formOpen, setFormOpen] = useState(false);
   const [allocationOpen, setAllocationOpen] = useState(false);
   const [allocationIssue, setAllocationIssue] = useState<{ available: number; required: number; missing: number } | null>(null);
   const [editingMovement, setEditingMovement] = useState<Transaction | null>(null);
+  const [movementToEdit, setMovementToEdit] = useState<Transaction | null>(null);
   const [budgetOpen, setBudgetOpen] = useState(false);
   const [type, setType] = useState<"income" | "expense">("expense");
   const [category, setCategory] = useState("Mercado");
   const [allocationPocket, setAllocationPocket] = useState<PocketName>("Colchon");
   const period = data.forecast[0];
-  const sumCategories = (items: string[]) =>
-    period.items
-      .filter((item) => items.includes(item.category))
-      .reduce((total, item) => total + item.plannedAmount, 0);
-  const guiltFreeAmount = Math.max(0, Math.min(data.settings.freeSpendingTarget, data.projectedIncome - period.total - data.settings.cushionTarget));
   const fixedShortfall = [
-    { target: sumCategories(["Hogar", "Servicios", "Educacion", "Finanzas"]), allocated: data.allocatedByPocket.Obligaciones },
-    { target: sumCategories(["Mercado", "Higiene"]), allocated: data.allocatedByPocket.Mercado },
-    { target: sumCategories(["Transporte"]), allocated: data.allocatedByPocket.Movilidad },
-    { target: sumCategories(["Mascota"]), allocated: data.allocatedByPocket.Gato },
+    { target: data.outstandingByPocket.Obligaciones, allocated: data.allocatedByPocket.Obligaciones },
+    { target: data.outstandingByPocket.Mercado, allocated: data.allocatedByPocket.Mercado },
+    { target: data.outstandingByPocket.Movilidad, allocated: data.allocatedByPocket.Movilidad },
+    { target: data.outstandingByPocket.Gato, allocated: data.allocatedByPocket.Gato },
   ].reduce((total, pocket) => total + Math.max(0, pocket.target - pocket.allocated), 0);
   const today = new Date().toISOString().slice(0, 10);
   const isIncome = type === "income";
@@ -224,12 +226,12 @@ export function DashboardContent({ data, email, addTransaction, addPocketAllocat
       <section className="mt-8">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3"><div><div className="flex items-center gap-2"><Link href={`/dashboard?month=${addMonths(period.month, -1)}`} className="grid h-7 w-7 place-items-center rounded-lg border border-stone-200 text-stone-700 hover:bg-stone-100" aria-label="Mes anterior"><ChevronLeft size={16} /></Link><p className="text-sm font-bold text-stone-900">Bolsillos para {monthLabel(period.month)}</p><Link href={`/dashboard?month=${addMonths(period.month, 1)}`} className="grid h-7 w-7 place-items-center rounded-lg border border-stone-200 text-stone-700 hover:bg-stone-100" aria-label="Mes siguiente"><ChevronRight size={16} /></Link></div><p className="mt-1 text-xs text-stone-500">Gastos estimados: {formatCop(period.total)}. Con la meta de colchon: {formatCop(period.total + data.settings.cushionTarget)}.</p></div><div className="flex gap-2">{data.isCurrentMonth && <form action={handleFixedAllocation}><AllocateFixedButton disabled={fixedShortfall === 0} /></form>}<button onClick={() => setAllocationOpen(true)} className="shrink-0 rounded-xl bg-stone-900 px-3 py-2 text-xs font-bold text-white hover:bg-stone-700">Apartar dinero</button></div></div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          <Pocket name="Obligaciones" amount={sumCategories(["Hogar", "Servicios", "Educacion", "Finanzas"])} allocated={data.allocatedByPocket.Obligaciones} color="bg-violet-500" />
-          <Pocket name="Mercado" amount={sumCategories(["Mercado", "Higiene"])} allocated={data.allocatedByPocket.Mercado} color="bg-amber-400" />
-          <Pocket name="Movilidad" amount={sumCategories(["Transporte"])} allocated={data.allocatedByPocket.Movilidad} color="bg-sky-500" />
-          <Pocket name="Gato" amount={sumCategories(["Mascota"])} allocated={data.allocatedByPocket.Gato} color="bg-rose-400" />
-          <Pocket name="Gasto libre" amount={guiltFreeAmount} allocated={data.allocatedByPocket["Gasto libre"]} color="bg-emerald-500" />
-          <Pocket name="Colchon" amount={data.settings.cushionTarget} allocated={data.allocatedByPocket.Colchon} color="bg-stone-500" />
+          <Pocket name="Obligaciones" amount={data.outstandingByPocket.Obligaciones} target={data.pocketTargets.Obligaciones} paid={data.paidByPocket.Obligaciones} allocated={data.allocatedByPocket.Obligaciones} overspent={data.overspentByPocket.Obligaciones} color="bg-violet-500" />
+          <Pocket name="Mercado" amount={data.outstandingByPocket.Mercado} target={data.pocketTargets.Mercado} paid={data.paidByPocket.Mercado} allocated={data.allocatedByPocket.Mercado} overspent={data.overspentByPocket.Mercado} color="bg-amber-400" />
+          <Pocket name="Movilidad" amount={data.outstandingByPocket.Movilidad} target={data.pocketTargets.Movilidad} paid={data.paidByPocket.Movilidad} allocated={data.allocatedByPocket.Movilidad} overspent={data.overspentByPocket.Movilidad} color="bg-sky-500" />
+          <Pocket name="Gato" amount={data.outstandingByPocket.Gato} target={data.pocketTargets.Gato} paid={data.paidByPocket.Gato} allocated={data.allocatedByPocket.Gato} overspent={data.overspentByPocket.Gato} color="bg-rose-400" />
+          <Pocket name="Gasto libre" amount={data.outstandingByPocket["Gasto libre"]} target={data.pocketTargets["Gasto libre"]} paid={data.paidByPocket["Gasto libre"]} allocated={data.allocatedByPocket["Gasto libre"]} overspent={data.overspentByPocket["Gasto libre"]} color="bg-emerald-500" />
+          <Pocket name="Colchon" amount={data.outstandingByPocket.Colchon} target={data.pocketTargets.Colchon} paid={data.paidByPocket.Colchon} allocated={data.allocatedByPocket.Colchon} overspent={data.overspentByPocket.Colchon} color="bg-stone-500" />
         </div>
       </section>
 
@@ -254,13 +256,15 @@ export function DashboardContent({ data, email, addTransaction, addPocketAllocat
           {data.currentPlan.length === 0 ? <p className="mt-5 rounded-2xl bg-emerald-50 px-4 py-4 text-sm font-medium text-emerald-800">No hay obligaciones pendientes este mes.</p> : <div className="mt-4 divide-y divide-stone-100">{data.currentPlan.map((bill) => <div key={bill.id} className="flex items-center justify-between gap-3 py-3"><div><p className="font-semibold text-stone-900">{bill.name}</p><p className="text-xs text-stone-500">Dia {bill.dueDay} · {formatCop(bill.plannedAmount)}</p></div><form action={payRecurringExpense}><input type="hidden" name="expenseId" value={bill.id} /><PayBillButton /></form></div>)}</div>}
         </article>
         <article className="rounded-3xl border border-stone-200 bg-white p-5">
-          <div className="flex items-center justify-between gap-3"><p className="flex items-center gap-2 text-sm font-bold text-stone-900"><ReceiptText size={17} /> Ultimos movimientos</p><button disabled={data.recentMovements.length === 0} onClick={() => setEditingMovement(data.recentMovements[0] ?? null)} className="flex items-center gap-1 rounded-lg border border-stone-200 px-2.5 py-1.5 text-xs font-bold text-stone-700 hover:bg-stone-100 disabled:opacity-40"><Pencil size={13} /> Editar</button></div>
+          <div className="flex items-center justify-between gap-3"><p className="flex items-center gap-2 text-sm font-bold text-stone-900"><ReceiptText size={17} /> Ultimos movimientos</p><button disabled={data.recentMovements.length === 0} onClick={() => setMovementToEdit(data.recentMovements[0] ?? null)} className="flex items-center gap-1 rounded-lg border border-stone-200 px-2.5 py-1.5 text-xs font-bold text-stone-700 hover:bg-stone-100 disabled:opacity-40"><Pencil size={13} /> Editar</button></div>
           <p className="mt-1 text-sm text-stone-500">Cada registro mantiene el saldo real.</p>
           {data.recentMovements.length === 0 ? <p className="mt-5 rounded-2xl bg-stone-50 px-4 py-4 text-sm text-stone-600">Aun no hay movimientos. Registra el siguiente gasto en menos de 10 segundos.</p> : <div className="mt-4 divide-y divide-stone-100">{data.recentMovements.map((movement) => <div key={movement.id} className="flex items-center justify-between py-3"><div className="flex items-center gap-3"><span className={`grid h-9 w-9 place-items-center rounded-full ${movement.type === "income" ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}`}>{movement.type === "income" ? <ArrowDownLeft size={17} /> : <ArrowUpRight size={17} />}</span><div><p className="font-semibold text-stone-900">{movement.note || movement.category}</p><p className="text-xs text-stone-500">{movement.occurredOn} · {movement.category}</p></div></div><b className={movement.type === "income" ? "text-emerald-700" : "text-stone-900"}>{movement.type === "income" ? "+" : "-"}{formatCop(movement.amount)}</b></div>)}</div>}
         </article>
       </section>
 
       <button onClick={() => setFormOpen(true)} className="fixed bottom-5 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full bg-emerald-600 px-5 py-3.5 text-sm font-bold text-white shadow-xl shadow-emerald-900/25 transition hover:bg-emerald-700"><Plus size={19} /> Registrar movimiento</button>
+
+      {movementToEdit && <EditMovementDialog movements={data.recentMovements} initialMovement={movementToEdit} updateTransaction={updateTransaction} deleteTransaction={deleteTransaction} onClose={() => setMovementToEdit(null)} />}
 
       {editingMovement && <div className="fixed inset-0 z-40 grid place-items-center bg-stone-950/40 p-5"><section className="w-full max-w-lg rounded-[2rem] bg-white p-6 shadow-2xl"><div className="flex items-start justify-between gap-4"><div><p className="text-sm font-bold text-stone-900">Editar movimiento</p><p className="text-sm text-stone-500">Corrige un ingreso o gasto sin crear otro registro.</p></div><button type="button" onClick={() => setEditingMovement(null)} className="grid h-9 w-9 place-items-center rounded-full bg-stone-100"><X size={18} /></button></div><div className="mt-5"><label className="text-sm font-semibold">Movimiento reciente</label><select value={editingMovement.id} onChange={(event) => setEditingMovement(data.recentMovements.find((movement) => movement.id === Number(event.target.value)) ?? editingMovement)} className="mt-2 w-full rounded-xl border border-stone-200 bg-white px-3 py-3 text-sm outline-none focus:border-emerald-500">{data.recentMovements.map((movement) => <option key={movement.id} value={movement.id}>{movement.occurredOn} · {movement.note || movement.category} · {formatCop(movement.amount)}</option>)}</select></div><form key={editingMovement.id} action={updateTransaction} className="mt-5 space-y-4"><input type="hidden" name="id" value={editingMovement.id} /><div className="grid grid-cols-2 gap-3"><label><span className="text-sm font-semibold">Tipo</span><select name="type" defaultValue={editingMovement.type} className="mt-2 w-full rounded-xl border border-stone-200 bg-white px-3 py-3 text-sm outline-none focus:border-emerald-500"><option value="expense">Gasto</option><option value="income">Ingreso</option></select></label><label><span className="text-sm font-semibold">Categoria</span><input name="category" defaultValue={editingMovement.category} className="mt-2 w-full rounded-xl border border-stone-200 px-3 py-3 text-sm outline-none focus:border-emerald-500" /></label></div><label className="block"><span className="text-sm font-semibold">Monto</span><MoneyField name="amount" initialValue={editingMovement.amount} /></label><div className="grid grid-cols-2 gap-3"><label><span className="text-sm font-semibold">Fecha</span><input name="occurredOn" type="date" defaultValue={editingMovement.occurredOn} className="mt-2 w-full rounded-xl border border-stone-200 px-3 py-3 text-sm outline-none focus:border-emerald-500" /></label><label><span className="text-sm font-semibold">Nota</span><input name="note" defaultValue={editingMovement.note || ""} maxLength={160} className="mt-2 w-full rounded-xl border border-stone-200 px-3 py-3 text-sm outline-none focus:border-emerald-500" /></label></div><SaveMovementButton /></form></section></div>}
 

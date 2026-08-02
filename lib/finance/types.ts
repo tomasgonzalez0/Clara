@@ -46,4 +46,5 @@ export type PocketAllocation = {
   amount: number;
   occurredOn: string;
   note: string | null;
+  transactionId: number | null;
 };

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
-import { addPocketAllocation, addTransaction, allocateFixedExpenses, payRecurringExpense, resetBudgetSettings, updateBudgetSettings, updateTransaction } from "@/app/actions";
+import { addPocketAllocation, addTransaction, allocateFixedExpenses, deleteTransaction, payRecurringExpense, resetBudgetSettings, updateBudgetSettings, updateTransaction } from "@/app/actions";
 import { authOptions } from "@/auth";
 import { DashboardContent } from "@/components/dashboard-content";
 import { getDashboardData } from "@/lib/dashboard";
@@ -18,5 +18,5 @@ export default async function DashboardPage({
 
   const { month } = await searchParams;
   const data = await getDashboardData(email, month);
-  return <DashboardContent data={data} email={email} addTransaction={addTransaction} addPocketAllocation={addPocketAllocation} allocateFixedExpenses={allocateFixedExpenses} payRecurringExpense={payRecurringExpense} updateTransaction={updateTransaction} updateBudgetSettings={updateBudgetSettings} resetBudgetSettings={resetBudgetSettings} />;
+  return <DashboardContent data={data} email={email} addTransaction={addTransaction} addPocketAllocation={addPocketAllocation} allocateFixedExpenses={allocateFixedExpenses} payRecurringExpense={payRecurringExpense} updateTransaction={updateTransaction} deleteTransaction={deleteTransaction} updateBudgetSettings={updateBudgetSettings} resetBudgetSettings={resetBudgetSettings} />;
 }

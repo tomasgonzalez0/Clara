@@ -63,5 +63,6 @@ export const pocketAllocations = pgTable("pocket_allocations", {
   amount: integer("amount").notNull(),
   occurredOn: text("occurred_on").notNull(),
   note: text("note"),
+  transactionId: integer("transaction_id").references(() => transactions.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
